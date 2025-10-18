@@ -15,3 +15,4 @@ AI integrations live in this namespace.
 - Text prompts can now include tool definitions; use `TextPrompt::getTools()` and add tool responses as `TextPromptRole::TOOL` messages when continuing provider conversations.
 - Providers must return `ProviderResponse` objects. When `getToolCalls()` is non-empty the gateway resolves them via `ToolExecutor` before requesting a final result.
 - Register tool handlers by implementing `ToolHandlerInterface` and tagging the service with `app.ai_tool`; `ToolExecutor` supports both callable helpers (`CallableToolHandler`) and MCP-backed handlers via `McpToolHandler`.
+- `AiGateway` records structured tool execution logs (duration, timestamp, stack trace, result payload, and errors) under the `metadata.overrides.toolExecutions` key so admin analytics can display deep diagnostics.
