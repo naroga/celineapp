@@ -7,13 +7,13 @@ use App\ArtificialIntelligence\Exception\UnsupportedPromptException;
 use App\ArtificialIntelligence\Provider\AbstractAiProvider;
 use App\ArtificialIntelligence\Provider\AiProviderRegistry;
 use App\ArtificialIntelligence\Provider\AiProviderResolver;
+use App\ArtificialIntelligence\Provider\ProviderResponse;
 use App\ArtificialIntelligence\Prompt\ImageGenerationPrompt;
 use App\ArtificialIntelligence\Prompt\PromptInterface;
 use App\ArtificialIntelligence\Prompt\PromptType;
 use App\ArtificialIntelligence\Prompt\TextPrompt;
 use App\ArtificialIntelligence\Prompt\TextPromptMessage;
 use App\ArtificialIntelligence\Prompt\TextPromptRole;
-use App\ArtificialIntelligence\Result\ResultInterface;
 use App\ArtificialIntelligence\Result\TextResult;
 use App\Entity\Assistant;
 use App\Entity\User;
@@ -30,9 +30,9 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::TEXT);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
-                return new TextResult($this->name, 'stub');
+                return ProviderResponse::fromResult(new TextResult($this->name, 'stub'));
             }
         };
 
@@ -54,9 +54,9 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::TEXT);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
-                return new TextResult($this->name, 'text');
+                return ProviderResponse::fromResult(new TextResult($this->name, 'text'));
             }
         };
 
@@ -66,9 +66,9 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::IMAGE_GENERATION);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
-                return new TextResult($this->name, 'image-result');
+                return ProviderResponse::fromResult(new TextResult($this->name, 'image-result'));
             }
         };
 
@@ -90,9 +90,9 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::TEXT);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
-                return new TextResult($this->name, 'default');
+                return ProviderResponse::fromResult(new TextResult($this->name, 'default'));
             }
         };
 
@@ -102,9 +102,9 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::TEXT);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
-                return new TextResult($this->name, 'override');
+                return ProviderResponse::fromResult(new TextResult($this->name, 'override'));
             }
         };
 
@@ -128,7 +128,7 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::TEXT);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
                 return new TextResult($this->name, 'text');
             }
@@ -140,7 +140,7 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::IMAGE_GENERATION);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
                 return new TextResult($this->name, 'image');
             }
@@ -175,7 +175,7 @@ final class AiProviderResolverTest extends TestCase
                 parent::__construct($name, PromptType::TEXT);
             }
 
-            public function process(PromptInterface $prompt): ResultInterface
+            public function process(PromptInterface $prompt): ProviderResponse
             {
                 return new TextResult($this->name, 'text');
             }

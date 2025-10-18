@@ -8,6 +8,7 @@ use App\ArtificialIntelligence\Prompt\TextPrompt;
 use App\ArtificialIntelligence\Prompt\TextPromptMessage;
 use App\ArtificialIntelligence\Prompt\TextPromptRole;
 use App\ArtificialIntelligence\Result\ResultInterface;
+use App\ArtificialIntelligence\Tool\ToolDefinition;
 use App\Entity\AiInteraction;
 use App\Entity\Assistant;
 use App\Entity\Conversation;
@@ -267,11 +268,39 @@ final class AiInteractionRecorder
         }
 
         $index = count($messages) - 1;
-        $lastMessage = $messages[$index];
+        $lastMessage = null;
 
-        if ($lastMessage->getRole() === TextPromptRole::SYSTEM && $index > 0) {
-            $lastMessage = $messages[$index - 1];
+        while ($index >= 0) {
+            $candidate = $messages[$index];
+            $role = $candidate->getRole();
+
+            if ($role === TextPromptRole::TOOL) {
+                $index--;
+
+                continue;
+            }
+
+            if ($role === TextPromptRole::SYSTEM) {
+                if ($index > 0) {
+                    $index--;
+
+                    continue;
+                }
+
+                $lastMessage = $candidate;
+
+                break;
+            }
+
+            $lastMessage = $candidate;
+
+            break;
         }
+
+        if ($lastMessage === null) {
+            $lastMessage = $messages[count($messages) - 1];
+        }
+
 
         return $this->truncate($lastMessage->getContent(), 120);
     }
@@ -356,11 +385,22 @@ final class AiInteractionRecorder
                 static fn (TextPromptMessage $message): array => [
                     'role' => $message->getRole()->value,
                     'content' => $message->getContent(),
+                    'metadata' => $message->getMetadata(),
                 ],
                 $prompt->getMessages(),
             ),
             'temperature' => $prompt->getTemperature(),
             'maxOutputTokens' => $prompt->getMaxOutputTokens(),
+            'tools' => array_map(
+                static fn (ToolDefinition $tool): array => [
+                    'name' => $tool->getName(),
+                    'description' => $tool->getDescription(),
+                    'type' => $tool->getType()->value,
+                    'parameters' => $tool->getParameters(),
+                    'configuration' => $tool->getConfiguration(),
+                ],
+                $prompt->getTools(),
+            ),
         ];
     }
 

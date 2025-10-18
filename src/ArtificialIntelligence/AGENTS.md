@@ -12,3 +12,6 @@ AI integrations live in this namespace.
 - Base64 persona images default to the `image/png` mime type when providers do not supply one; set an explicit mime type on the `GeneratedImage` if a different format is returned.
 - `AiGateway` now records every interaction through `AiInteractionRecorder`; do not bypass the gateway or log AI calls manually. Extend the recorder instead of duplicating analytics logic.
 - Use `AiAdminDashboardBuilder` to surface interaction metrics for dashboards or reports so aggregation stays consistent.
+- Text prompts can now include tool definitions; use `TextPrompt::getTools()` and add tool responses as `TextPromptRole::TOOL` messages when continuing provider conversations.
+- Providers must return `ProviderResponse` objects. When `getToolCalls()` is non-empty the gateway resolves them via `ToolExecutor` before requesting a final result.
+- Register tool handlers by implementing `ToolHandlerInterface` and tagging the service with `app.ai_tool`; `ToolExecutor` supports both callable helpers (`CallableToolHandler`) and MCP-backed handlers via `McpToolHandler`.

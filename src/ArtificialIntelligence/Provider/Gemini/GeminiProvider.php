@@ -3,9 +3,9 @@
 namespace App\ArtificialIntelligence\Provider\Gemini;
 
 use App\ArtificialIntelligence\Provider\AbstractAiProvider;
+use App\ArtificialIntelligence\Provider\ProviderResponse;
 use App\ArtificialIntelligence\Prompt\PromptInterface;
 use App\ArtificialIntelligence\Prompt\PromptType;
-use App\ArtificialIntelligence\Result\ResultInterface;
 
 final class GeminiProvider extends AbstractAiProvider
 {
@@ -19,7 +19,7 @@ final class GeminiProvider extends AbstractAiProvider
         );
     }
 
-    public function process(PromptInterface $prompt): ResultInterface
+    public function process(PromptInterface $prompt): ProviderResponse
     {
         throw new \LogicException('Gemini integration is not implemented yet.');
     }

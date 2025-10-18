@@ -5,7 +5,7 @@ namespace App\ArtificialIntelligence\Provider\Anthropic;
 use App\ArtificialIntelligence\Provider\AbstractAiProvider;
 use App\ArtificialIntelligence\Prompt\PromptInterface;
 use App\ArtificialIntelligence\Prompt\PromptType;
-use App\ArtificialIntelligence\Result\ResultInterface;
+use App\ArtificialIntelligence\Provider\ProviderResponse;
 
 final class AnthropicProvider extends AbstractAiProvider
 {
@@ -18,7 +18,7 @@ final class AnthropicProvider extends AbstractAiProvider
         );
     }
 
-    public function process(PromptInterface $prompt): ResultInterface
+    public function process(PromptInterface $prompt): ProviderResponse
     {
         throw new \LogicException('Anthropic integration is not implemented yet.');
     }

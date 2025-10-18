@@ -168,6 +168,7 @@ final class ConversationManager
             ConversationRole::SYSTEM => TextPromptRole::SYSTEM,
             ConversationRole::USER => TextPromptRole::USER,
             ConversationRole::ASSISTANT => TextPromptRole::ASSISTANT,
+            ConversationRole::TOOL => TextPromptRole::TOOL,
         };
     }
 }

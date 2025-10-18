@@ -2,6 +2,8 @@
 
 namespace App\ArtificialIntelligence\Prompt;
 
+use App\ArtificialIntelligence\Tool\ToolDefinition;
+
 /**
  * Represents a chat-based text prompt that can include prior conversation context.
  *
@@ -24,10 +26,21 @@ final class TextPrompt implements PromptInterface
     private readonly array $metadata;
 
     /**
+     * @var list<ToolDefinition>
+     */
+    private readonly array $tools;
+
+    /**
      * @param list<TextPromptMessage> $messages
      * @param array<string, scalar|null> $metadata
      */
-    public function __construct(array $messages, ?float $temperature = null, ?int $maxOutputTokens = null, array $metadata = [])
+    public function __construct(
+        array $messages,
+        ?float $temperature = null,
+        ?int $maxOutputTokens = null,
+        array $metadata = [],
+        array $tools = [],
+    )
     {
         if ($messages === []) {
             throw new \InvalidArgumentException('A text prompt requires at least one message.');
@@ -47,10 +60,25 @@ final class TextPrompt implements PromptInterface
             throw new \InvalidArgumentException('Max output tokens must be a positive integer.');
         }
 
+        foreach ($tools as $tool) {
+            if (!$tool instanceof ToolDefinition) {
+                throw new \InvalidArgumentException('Text prompts only accept ToolDefinition instances in tools.');
+            }
+        }
+
+        if ($tools !== []) {
+            $names = array_map(static fn (ToolDefinition $tool): string => $tool->getName(), $tools);
+
+            if (count($names) !== count(array_unique($names))) {
+                throw new \InvalidArgumentException('All tool definitions within a prompt must have unique names.');
+            }
+        }
+
         $this->messages = array_values($messages);
         $this->temperature = $temperature;
         $this->maxOutputTokens = $maxOutputTokens;
         $this->metadata = $metadata;
+        $this->tools = array_values($tools);
     }
 
     public function getType(): PromptType
@@ -82,5 +110,13 @@ final class TextPrompt implements PromptInterface
     public function getMetadata(): array
     {
         return $this->metadata;
+    }
+
+    /**
+     * @return list<ToolDefinition>
+     */
+    public function getTools(): array
+    {
+        return $this->tools;
     }
 }

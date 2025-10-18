@@ -16,6 +16,8 @@ use App\ArtificialIntelligence\Result\AudioToTextResult;
 use App\ArtificialIntelligence\Result\ComputerVisionResult;
 use App\ArtificialIntelligence\Result\ImageGenerationResult;
 use App\ArtificialIntelligence\Result\TextResult;
+use App\ArtificialIntelligence\Tool\ToolDefinition;
+use App\ArtificialIntelligence\Tool\ToolDefinitionType;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -50,8 +52,10 @@ final class OpenAiProviderTest extends TestCase
             new TextPromptMessage(TextPromptRole::USER, 'Hello?'),
         ]);
 
-        $result = $provider->process($prompt);
+        $response = $provider->process($prompt);
 
+        self::assertTrue($response->hasResult());
+        $result = $response->getResult();
         self::assertInstanceOf(TextResult::class, $result);
         self::assertSame('openai', $result->getProviderName());
         self::assertSame('Hello back!', $result->getContent());
@@ -83,8 +87,10 @@ final class OpenAiProviderTest extends TestCase
         $provider = new OpenAiProvider($client);
 
         $prompt = new ImageGenerationPrompt('Draw a friendly assistant', 512, 512, 'vivid');
-        $result = $provider->process($prompt);
+        $response = $provider->process($prompt);
 
+        self::assertTrue($response->hasResult());
+        $result = $response->getResult();
         self::assertInstanceOf(ImageGenerationResult::class, $result);
         self::assertCount(1, $result->getImages());
         self::assertSame('openai', $result->getProviderName());
@@ -120,8 +126,10 @@ final class OpenAiProviderTest extends TestCase
             new TextPromptMessage(TextPromptRole::USER, 'Tell me a story.'),
         ], null, null, ['model' => 'gpt-5-creative', 'max_tokens' => 256]);
 
-        $result = $provider->process($prompt);
+        $response = $provider->process($prompt);
 
+        self::assertTrue($response->hasResult());
+        $result = $response->getResult();
         self::assertInstanceOf(TextResult::class, $result);
         self::assertSame('Creative reply', $result->getContent());
 
@@ -152,10 +160,86 @@ final class OpenAiProviderTest extends TestCase
         $image = new MediaInput(MediaInputType::BASE64, base64_encode('fake-image-bytes'), 'image/png');
         $prompt = new ComputerVisionPrompt($image, 'What does this chart show?');
 
-        $result = $provider->process($prompt);
+        $response = $provider->process($prompt);
 
+        self::assertTrue($response->hasResult());
+        $result = $response->getResult();
         self::assertInstanceOf(ComputerVisionResult::class, $result);
         self::assertSame('The chart shows positive growth.', $result->getContent());
+    }
+
+    public function testTextPromptWithToolCallsRequestsToolExecution(): void
+    {
+        $captured = null;
+
+        $httpClient = new MockHttpClient(static function (string $method, string $url, array $options) use (&$captured): MockResponse {
+            $captured = ['method' => $method, 'url' => $url, 'options' => $options];
+
+            $payload = [
+                'id' => 'chatcmpl-tool',
+                'model' => 'gpt-5',
+                'choices' => [
+                    [
+                        'message' => [
+                            'content' => null,
+                            'tool_calls' => [
+                                [
+                                    'id' => 'call-abc',
+                                    'type' => 'function',
+                                    'function' => [
+                                        'name' => 'get_weather',
+                                        'arguments' => json_encode(['location' => 'Paris'], JSON_THROW_ON_ERROR),
+                                    ],
+                                ],
+                            ],
+                        ],
+                        'finish_reason' => 'tool_calls',
+                    ],
+                ],
+                'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 0],
+            ];
+
+            return new MockResponse(json_encode($payload, JSON_THROW_ON_ERROR));
+        });
+
+        $client = new OpenAiClient($httpClient, 'test-api-key', ['api_base' => 'https://api.openai.com/v1']);
+        $provider = new OpenAiProvider($client);
+
+        $tool = new ToolDefinition(
+            'get_weather',
+            'Fetch current weather conditions.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'location' => ['type' => 'string'],
+                ],
+                'required' => ['location'],
+            ],
+            ToolDefinitionType::FUNCTION,
+        );
+
+        $prompt = new TextPrompt([
+            new TextPromptMessage(TextPromptRole::USER, 'What is the weather in Paris?'),
+        ], null, null, [], [$tool]);
+
+        $response = $provider->process($prompt);
+
+        self::assertFalse($response->hasResult());
+        self::assertTrue($response->isToolContinuation());
+
+        $toolCalls = $response->getToolCalls();
+        self::assertCount(1, $toolCalls);
+
+        $call = $toolCalls[0];
+        self::assertSame('get_weather', $call->getName());
+        self::assertSame('call-abc', $call->getCallId());
+        self::assertSame(['location' => 'Paris'], $call->getArguments());
+
+        self::assertNotNull($captured);
+        $requestBody = json_decode($captured['options']['body'], true, 512, JSON_THROW_ON_ERROR);
+        self::assertArrayHasKey('tools', $requestBody);
+        self::assertCount(1, $requestBody['tools']);
+        self::assertSame('get_weather', $requestBody['tools'][0]['function']['name']);
     }
 
     public function testProcessAudioPromptReturnsTranscript(): void
@@ -179,8 +263,10 @@ final class OpenAiProviderTest extends TestCase
         $audioData = base64_encode('fake-audio');
         $prompt = new AudioToTextPrompt(new MediaInput(MediaInputType::BASE64, $audioData, 'audio/wav'), 'en');
 
-        $result = $provider->process($prompt);
+        $response = $provider->process($prompt);
 
+        self::assertTrue($response->hasResult());
+        $result = $response->getResult();
         self::assertInstanceOf(AudioToTextResult::class, $result);
         self::assertSame('Hello world transcript', $result->getTranscript());
 

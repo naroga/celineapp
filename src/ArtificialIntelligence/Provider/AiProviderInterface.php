@@ -3,7 +3,6 @@
 namespace App\ArtificialIntelligence\Provider;
 
 use App\ArtificialIntelligence\Prompt\PromptInterface;
-use App\ArtificialIntelligence\Result\ResultInterface;
 
 interface AiProviderInterface
 {
@@ -11,5 +10,5 @@ interface AiProviderInterface
 
     public function supports(PromptInterface $prompt): bool;
 
-    public function process(PromptInterface $prompt): ResultInterface;
+    public function process(PromptInterface $prompt): ProviderResponse;
 }

@@ -4,6 +4,7 @@ namespace App\ArtificialIntelligence\Provider\OpenAi;
 
 use App\ArtificialIntelligence\Exception\OpenAiClientException;
 use App\ArtificialIntelligence\Provider\AbstractAiProvider;
+use App\ArtificialIntelligence\Provider\ProviderResponse;
 use App\ArtificialIntelligence\Prompt\AudioToTextPrompt;
 use App\ArtificialIntelligence\Prompt\ComputerVisionPrompt;
 use App\ArtificialIntelligence\Prompt\ImageGenerationPrompt;
@@ -13,6 +14,7 @@ use App\ArtificialIntelligence\Prompt\PromptInterface;
 use App\ArtificialIntelligence\Prompt\PromptType;
 use App\ArtificialIntelligence\Prompt\TextPrompt;
 use App\ArtificialIntelligence\Prompt\TextPromptMessage;
+use App\ArtificialIntelligence\Prompt\TextPromptRole;
 use App\ArtificialIntelligence\Result\AudioToTextResult;
 use App\ArtificialIntelligence\Result\ComputerVisionResult;
 use App\ArtificialIntelligence\Result\GeneratedImage;
@@ -20,6 +22,10 @@ use App\ArtificialIntelligence\Result\GeneratedImageType;
 use App\ArtificialIntelligence\Result\ImageGenerationResult;
 use App\ArtificialIntelligence\Result\ResultInterface;
 use App\ArtificialIntelligence\Result\TextResult;
+use App\ArtificialIntelligence\Tool\ToolCall;
+use App\ArtificialIntelligence\Tool\ToolDefinition;
+use App\ArtificialIntelligence\Tool\ToolDefinitionType;
+use JsonException;
 use Symfony\Component\Mime\Part\DataPart;
 
 final class OpenAiProvider extends AbstractAiProvider
@@ -37,25 +43,43 @@ final class OpenAiProvider extends AbstractAiProvider
         );
     }
 
-    public function process(PromptInterface $prompt): ResultInterface
+    public function process(PromptInterface $prompt): ProviderResponse
     {
         return match ($prompt->getType()) {
             PromptType::TEXT => $this->handleTextPrompt($prompt),
-            PromptType::IMAGE_GENERATION => $this->handleImageGenerationPrompt($prompt),
-            PromptType::COMPUTER_VISION => $this->handleComputerVisionPrompt($prompt),
-            PromptType::AUDIO_TO_TEXT => $this->handleAudioToTextPrompt($prompt),
+            PromptType::IMAGE_GENERATION => ProviderResponse::fromResult($this->handleImageGenerationPrompt($prompt)),
+            PromptType::COMPUTER_VISION => ProviderResponse::fromResult($this->handleComputerVisionPrompt($prompt)),
+            PromptType::AUDIO_TO_TEXT => ProviderResponse::fromResult($this->handleAudioToTextPrompt($prompt)),
         };
     }
 
-    private function handleTextPrompt(TextPrompt $prompt): TextResult
+    private function handleTextPrompt(TextPrompt $prompt): ProviderResponse
     {
-        $messages = array_map(
-            static fn (TextPromptMessage $message) => [
+        $messages = [];
+
+        foreach ($prompt->getMessages() as $message) {
+            $payloadMessage = [
                 'role' => $message->getRole()->value,
                 'content' => $message->getContent(),
-            ],
-            $prompt->getMessages(),
-        );
+            ];
+
+            if ($message->getRole() === TextPromptRole::TOOL) {
+                $metadata = $message->getMetadata();
+                $toolCallId = isset($metadata['tool_call_id']) ? (string) $metadata['tool_call_id'] : null;
+
+                if ($toolCallId === null || $toolCallId === '') {
+                    throw new \InvalidArgumentException('Tool messages require a "tool_call_id" metadata entry for OpenAI.');
+                }
+
+                $payloadMessage['tool_call_id'] = $toolCallId;
+
+                if (isset($metadata['tool_name']) && is_string($metadata['tool_name']) && $metadata['tool_name'] !== '') {
+                    $payloadMessage['name'] = $metadata['tool_name'];
+                }
+            }
+
+            $messages[] = $payloadMessage;
+        }
 
         $metadata = $prompt->getMetadata();
         $model = $metadata['model'] ?? $this->client->getModel('text', 'gpt-5');
@@ -78,17 +102,190 @@ final class OpenAiProvider extends AbstractAiProvider
             $payload = array_merge($payload, $metadata);
         }
 
+        $toolPayload = $this->buildToolPayload($prompt->getTools());
+
+        if ($toolPayload !== []) {
+            $payload['tools'] = $toolPayload;
+        }
+
         $response = $this->client->chat($payload);
+        $choice = $this->extractFirstChoice($response);
+
+        $toolCalls = $this->extractToolCalls($choice);
+
+        if ($toolCalls !== []) {
+            return ProviderResponse::fromToolCalls($toolCalls, [
+                'id' => $response['id'] ?? null,
+                'model' => $response['model'] ?? null,
+                'usage' => $response['usage'] ?? null,
+                'finish_reason' => $choice['finish_reason'] ?? null,
+            ]);
+        }
 
         $content = $this->extractTextContent($response);
 
-        $metadata = [
+        $resultMetadata = [
             'id' => $response['id'] ?? null,
             'model' => $response['model'] ?? null,
             'usage' => $response['usage'] ?? null,
         ];
 
-        return new TextResult(self::PROVIDER_NAME, $content, $metadata);
+        $result = new TextResult(self::PROVIDER_NAME, $content, $resultMetadata);
+
+        return ProviderResponse::fromResult($result, [
+            'finish_reason' => $choice['finish_reason'] ?? null,
+        ]);
+    }
+
+    /**
+     * @param list<ToolDefinition> $tools
+     * @return list<array<string, mixed>>
+     */
+    private function buildToolPayload(array $tools): array
+    {
+        if ($tools === []) {
+            return [];
+        }
+
+        $payload = [];
+
+        foreach ($tools as $tool) {
+            $payload[] = $this->normaliseToolDefinition($tool);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normaliseToolDefinition(ToolDefinition $tool): array
+    {
+        $parameters = $tool->getParameters();
+
+        if ($parameters === []) {
+            $parameters = [
+                'type' => 'object',
+                'properties' => (object) [],
+            ];
+        }
+
+        $type = $tool->getType();
+
+        if (!in_array($type, [ToolDefinitionType::FUNCTION, ToolDefinitionType::MCP], true)) {
+            throw new \InvalidArgumentException(sprintf('Unsupported tool definition type "%s" for OpenAI.', $type->value));
+        }
+
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => $tool->getName(),
+                'description' => $tool->getDescription(),
+                'parameters' => $parameters,
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $response
+     *
+     * @return array<string, mixed>
+     */
+    private function extractFirstChoice(array $response): array
+    {
+        $choices = $response['choices'] ?? null;
+
+        if (!is_array($choices) || $choices === []) {
+            throw OpenAiClientException::invalidResponse('Chat completion response must include at least one choice.');
+        }
+
+        $choice = $choices[0];
+
+        if (!is_array($choice)) {
+            throw OpenAiClientException::invalidResponse('Chat completion choice payload is malformed.');
+        }
+
+        return $choice;
+    }
+
+    /**
+     * @param array<string, mixed> $choice
+     *
+     * @return list<ToolCall>
+     */
+    private function extractToolCalls(array $choice): array
+    {
+        $message = $choice['message'] ?? null;
+
+        if (!is_array($message)) {
+            return [];
+        }
+
+        $toolCalls = $message['tool_calls'] ?? null;
+
+        if (!is_array($toolCalls) || $toolCalls === []) {
+            return [];
+        }
+
+        $calls = [];
+
+        foreach ($toolCalls as $toolCallData) {
+            if (!is_array($toolCallData)) {
+                continue;
+            }
+
+            $function = $toolCallData['function'] ?? null;
+
+            if (!is_array($function)) {
+                continue;
+            }
+
+            $name = isset($function['name']) ? (string) $function['name'] : '';
+
+            if ($name === '') {
+                continue;
+            }
+
+            $argumentsPayload = $function['arguments'] ?? [];
+            $arguments = $this->decodeToolArguments($argumentsPayload);
+
+            $calls[] = new ToolCall(
+                $name,
+                $arguments,
+                isset($toolCallData['id']) ? (string) $toolCallData['id'] : null,
+            );
+        }
+
+        return $calls;
+    }
+
+    /**
+     * @param mixed $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function decodeToolArguments(mixed $payload): array
+    {
+        if ($payload === null || $payload === '') {
+            return [];
+        }
+
+        if (is_array($payload)) {
+            return $payload;
+        }
+
+        if (!is_string($payload)) {
+            throw OpenAiClientException::invalidResponse('Tool call arguments must be a JSON string or array.');
+        }
+
+        try {
+            /** @var array<string, mixed> $decoded */
+            $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw OpenAiClientException::invalidResponse('Unable to decode tool call arguments JSON.', $exception);
+        }
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     private function handleImageGenerationPrompt(ImageGenerationPrompt $prompt): ImageGenerationResult
