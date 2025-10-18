@@ -159,6 +159,26 @@ final class AiGatewayTest extends TestCase
         self::assertIsArray($recordedMetadata);
         self::assertArrayHasKey('overrides', $recordedMetadata);
         self::assertIsArray($recordedMetadata['overrides']);
+        self::assertArrayHasKey('toolExecutions', $recordedMetadata['overrides']);
+        $toolExecutions = $recordedMetadata['overrides']['toolExecutions'];
+        self::assertIsArray($toolExecutions);
+        self::assertCount(1, $toolExecutions);
+
+        $executionLog = $toolExecutions[0];
+        self::assertSame('inspect', $executionLog['tool'] ?? null);
+        self::assertSame('call-1', $executionLog['call_id'] ?? null);
+        self::assertSame('success', $executionLog['status'] ?? null);
+        self::assertArrayHasKey('duration_ms', $executionLog);
+        self::assertIsFloat($executionLog['duration_ms']);
+        self::assertGreaterThanOrEqual(0.0, $executionLog['duration_ms']);
+        self::assertArrayHasKey('stack_trace', $executionLog);
+        self::assertIsString($executionLog['stack_trace']);
+        self::assertNotSame('', trim($executionLog['stack_trace']));
+        self::assertArrayHasKey('result', $executionLog);
+        self::assertIsArray($executionLog['result']);
+        self::assertSame('{"status":"ok"}', $executionLog['result']['content'] ?? null);
+
+        // Backwards compatibility alias remains available.
         self::assertArrayHasKey('tools', $recordedMetadata['overrides']);
         self::assertSame('inspect', $recordedMetadata['overrides']['tools'][0]['tool'] ?? null);
     }

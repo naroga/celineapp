@@ -16,6 +16,7 @@ use App\ArtificialIntelligence\Tool\ToolExecutionResult;
 use App\ArtificialIntelligence\Tool\ToolRuntimeContext;
 use App\Entity\Assistant;
 use App\Entity\Conversation;
+use DateTimeImmutable;
 
 final class AiGateway
 {
@@ -148,22 +149,51 @@ final class AiGateway
         $executions = [];
 
         foreach ($toolCalls as $call) {
-            $result = $this->toolExecutor->execute($call, $context);
-            $executions[] = [
-                'call' => $call,
-                'result' => $result,
-            ];
+            $startedAt = microtime(true);
+            $timestamp = (new DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+            $stackTrace = $this->captureStackTrace();
 
-            $toolExecutionsLog[] = [
-                'iteration' => $iteration,
-                'call_id' => $call->getCallId(),
-                'tool' => $call->getName(),
-                'arguments' => $call->getArguments(),
-                'result' => [
-                    'content' => $result->getContent(),
-                    'metadata' => $result->getMetadata(),
-                ],
-            ];
+            try {
+                $result = $this->toolExecutor->execute($call, $context);
+
+                $executions[] = [
+                    'call' => $call,
+                    'result' => $result,
+                ];
+
+                $toolExecutionsLog[] = [
+                    'iteration' => $iteration,
+                    'call_id' => $call->getCallId(),
+                    'tool' => $call->getName(),
+                    'arguments' => $call->getArguments(),
+                    'result' => [
+                        'content' => $result->getContent(),
+                        'metadata' => $result->getMetadata(),
+                    ],
+                    'status' => 'success',
+                    'duration_ms' => $this->calculateDurationMs($startedAt),
+                    'timestamp' => $timestamp,
+                    'stack_trace' => $stackTrace,
+                ];
+            } catch (\Throwable $toolException) {
+                $toolExecutionsLog[] = [
+                    'iteration' => $iteration,
+                    'call_id' => $call->getCallId(),
+                    'tool' => $call->getName(),
+                    'arguments' => $call->getArguments(),
+                    'status' => 'failure',
+                    'duration_ms' => $this->calculateDurationMs($startedAt),
+                    'timestamp' => $timestamp,
+                    'stack_trace' => $stackTrace,
+                    'error' => [
+                        'class' => $toolException::class,
+                        'message' => $toolException->getMessage(),
+                        'trace' => $toolException->getTraceAsString(),
+                    ],
+                ];
+
+                throw $toolException;
+            }
         }
 
         return $this->appendToolResultsToPrompt($prompt, $executions, $providerName);
@@ -223,7 +253,11 @@ final class AiGateway
         }
 
         if ($toolExecutions !== []) {
-            $overrides['tools'] = $toolExecutions;
+            $overrides['toolExecutions'] = $toolExecutions;
+
+            if (!isset($overrides['tools'])) {
+                $overrides['tools'] = $toolExecutions;
+            }
         }
 
         return $overrides;
@@ -268,5 +302,38 @@ final class AiGateway
                 $exception,
             );
         }
+    }
+
+    private function calculateDurationMs(float $startedAt): float
+    {
+        return round((microtime(true) - $startedAt) * 1000, 3);
+    }
+
+    private function captureStackTrace(): string
+    {
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 20);
+
+        $formatted = array_map(
+            static function (array $frame): string {
+                $location = sprintf(
+                    '%s:%s',
+                    $frame['file'] ?? '[internal]',
+                    $frame['line'] ?? '?',
+                );
+
+                $callable = '';
+
+                if (isset($frame['class'], $frame['type'], $frame['function'])) {
+                    $callable = sprintf(' %s%s%s', $frame['class'], $frame['type'], $frame['function']);
+                } elseif (isset($frame['function'])) {
+                    $callable = sprintf(' %s', $frame['function']);
+                }
+
+                return $location . $callable;
+            },
+            $trace,
+        );
+
+        return implode("\n", $formatted);
     }
 }

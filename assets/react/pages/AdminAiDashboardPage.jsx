@@ -41,6 +41,18 @@ function formatDate(value) {
     return date.toLocaleString();
 }
 
+function formatDurationMs(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return '—';
+    }
+
+    if (value >= 1000) {
+        return `${(value / 1000).toFixed(2)} s`;
+    }
+
+    return `${value.toFixed(3)} ms`;
+}
+
 function StatusBadge({ status }) {
     const normalized = status === 'failure' ? 'failure' : 'success';
     const styles =
@@ -327,6 +339,7 @@ export function AdminAiDashboardPage() {
     const detailException = detailMetadata?.exception ?? null;
     const detailConversation = interactionDetail?.conversation ?? null;
     const detailOverrides = detailMetadata?.overrides ?? null;
+    const detailTools = interactionDetail?.tools ?? [];
     const promptMetaEntries = detailPromptDetails
         ? Object.entries(detailPromptDetails).filter(([key, value]) => {
               if (key === 'messages') {
@@ -781,6 +794,117 @@ export function AdminAiDashboardPage() {
                                                     {detailException.trace}
                                                 </pre>
                                             )}
+                                        </section>
+                                    )}
+
+                                    {detailTools.length > 0 && (
+                                        <section className="card space-y-4">
+                                            <header className="flex items-center justify-between">
+                                                <h3 className="text-base font-semibold text-[rgb(var(--text-primary))]">Tool executions</h3>
+                                                <span className="text-xs uppercase tracking-[0.3em] text-[rgb(var(--text-tertiary))]">
+                                                    {detailTools.length} logged
+                                                </span>
+                                            </header>
+                                            <div className="grid gap-4">
+                                                {detailTools.map((execution, index) => {
+                                                    const status = execution.status === 'failure' ? 'failure' : 'success';
+                                                    const resultContent =
+                                                        execution.result && typeof execution.result.content === 'string'
+                                                            ? execution.result.content
+                                                            : null;
+                                                    const resultMetadata =
+                                                        execution.result && execution.result.metadata && Object.keys(execution.result.metadata).length > 0
+                                                            ? execution.result.metadata
+                                                            : null;
+                                                    const hasArguments = execution.arguments && Object.keys(execution.arguments).length > 0;
+
+                                                    return (
+                                                        <article
+                                                            key={`${execution.callId ?? index}-${execution.timestamp ?? index}`}
+                                                            className={[
+                                                                'rounded-xl border p-4',
+                                                                status === 'failure'
+                                                                    ? 'border-rose-500/40 bg-rose-500/10'
+                                                                    : 'border-slate-800/70 bg-[rgb(var(--surface-body))]',
+                                                            ].join(' ')}
+                                                        >
+                                                            <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                                <div className="space-y-1">
+                                                                    <h4 className="text-base font-semibold text-[rgb(var(--text-primary))]">
+                                                                        {execution.tool ?? 'Unnamed tool'}
+                                                                    </h4>
+                                                                    <p className="text-xs text-[rgb(var(--text-tertiary))]">
+                                                                        Call ID: {execution.callId ?? '—'} • Iteration {execution.iteration ?? '—'}
+                                                                    </p>
+                                                                    <p className="text-xs text-[rgb(var(--text-tertiary))]">
+                                                                        Started {formatDate(execution.timestamp)} • Duration {formatDurationMs(execution.durationMs)}
+                                                                    </p>
+                                                                </div>
+                                                                <StatusBadge status={status} />
+                                                            </header>
+
+                                                            {hasArguments && (
+                                                                <details className="mt-3 text-xs text-[rgb(var(--text-tertiary))]">
+                                                                    <summary className="cursor-pointer text-[rgb(var(--text-secondary))]">
+                                                                        Arguments
+                                                                    </summary>
+                                                                    <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950/70 p-3 text-xs leading-5 text-[rgb(var(--text-secondary))]">
+                                                                        {JSON.stringify(execution.arguments, null, 2)}
+                                                                    </pre>
+                                                                </details>
+                                                            )}
+
+                                                            {resultContent && (
+                                                                <div className="mt-3">
+                                                                    <h5 className="text-xs uppercase tracking-[0.3em] text-[rgb(var(--text-tertiary))]">
+                                                                        Output
+                                                                    </h5>
+                                                                    <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[rgb(var(--text-primary))]">
+                                                                        {resultContent}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+
+                                                            {resultMetadata && (
+                                                                <details className="mt-3 text-xs text-[rgb(var(--text-tertiary))]">
+                                                                    <summary className="cursor-pointer text-[rgb(var(--text-secondary))]">
+                                                                        Output metadata
+                                                                    </summary>
+                                                                    <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950/70 p-3 text-xs leading-5 text-[rgb(var(--text-secondary))]">
+                                                                        {JSON.stringify(resultMetadata, null, 2)}
+                                                                    </pre>
+                                                                </details>
+                                                            )}
+
+                                                            {execution.error && (
+                                                                <section className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-100">
+                                                                    <header className="flex items-center justify-between">
+                                                                        <span className="uppercase tracking-[0.3em]">Tool error</span>
+                                                                        <span>{execution.error.class ?? 'Exception'}</span>
+                                                                    </header>
+                                                                    <p className="mt-2 text-rose-100">{execution.error.message ?? 'No message provided.'}</p>
+                                                                    {execution.error.trace && (
+                                                                        <pre className="mt-2 overflow-x-auto rounded bg-rose-500/10 p-3 text-xs leading-5 text-rose-200/80">
+                                                                            {execution.error.trace}
+                                                                        </pre>
+                                                                    )}
+                                                                </section>
+                                                            )}
+
+                                                            {execution.stackTrace && (
+                                                                <details className="mt-3 text-xs text-[rgb(var(--text-tertiary))]">
+                                                                    <summary className="cursor-pointer text-[rgb(var(--text-secondary))]">
+                                                                        Stack trace
+                                                                    </summary>
+                                                                    <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950/70 p-3 text-xs leading-5 text-[rgb(var(--text-secondary))]">
+                                                                        {execution.stackTrace}
+                                                                    </pre>
+                                                                </details>
+                                                            )}
+                                                        </article>
+                                                    );
+                                                })}
+                                            </div>
                                         </section>
                                     )}
 

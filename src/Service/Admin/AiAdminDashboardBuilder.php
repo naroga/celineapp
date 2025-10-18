@@ -58,6 +58,7 @@ final class AiAdminDashboardBuilder
         return [
             'interaction' => $this->mapInteraction($interaction),
             'metadata' => $interaction->getMetadata(),
+            'tools' => $this->extractToolExecutions($interaction->getMetadata()),
             'conversation' => $conversation === null ? null : [
                 'id' => $conversation->getId(),
                 'title' => $conversation->getTitle(),
@@ -107,6 +108,7 @@ final class AiAdminDashboardBuilder
         $assistant = $interaction->getAssistant();
         $workspace = $interaction->getWorkspace();
         $conversation = $interaction->getConversation();
+        $toolExecutions = $this->extractToolExecutions($interaction->getMetadata());
 
         return [
             'id' => $interaction->getId(),
@@ -138,6 +140,7 @@ final class AiAdminDashboardBuilder
                 'id' => $conversation->getId(),
                 'title' => $conversation->getTitle(),
             ],
+            'toolExecutionCount' => count($toolExecutions),
         ];
     }
 
@@ -206,5 +209,81 @@ final class AiAdminDashboardBuilder
             'metadata' => $turn->getMetadata(),
             'createdAt' => $turn->getCreatedAt()->format(\DateTimeInterface::ATOM),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function extractToolExecutions(array $metadata): array
+    {
+        $overrides = [];
+
+        if (isset($metadata['overrides']) && is_array($metadata['overrides'])) {
+            $overrides = $metadata['overrides'];
+        }
+
+        $executions = [];
+
+        if (isset($overrides['toolExecutions']) && is_array($overrides['toolExecutions'])) {
+            $executions = $overrides['toolExecutions'];
+        } elseif (isset($overrides['tools']) && is_array($overrides['tools'])) {
+            $executions = $overrides['tools'];
+        }
+
+        if (!is_array($executions) || $executions === []) {
+            return [];
+        }
+
+        return array_values(array_map(
+            static function (array $execution): array {
+                $arguments = $execution['arguments'] ?? [];
+
+                if (!is_array($arguments)) {
+                    $arguments = [];
+                }
+
+                $result = $execution['result'] ?? null;
+
+                if (!is_array($result)) {
+                    $result = null;
+                } else {
+                    $result = [
+                        'content' => $result['content'] ?? null,
+                        'metadata' => isset($result['metadata']) && is_array($result['metadata']) ? $result['metadata'] : [],
+                    ];
+                }
+
+                $error = $execution['error'] ?? null;
+
+                if (is_array($error)) {
+                    $error = [
+                        'class' => $error['class'] ?? null,
+                        'message' => $error['message'] ?? null,
+                        'trace' => $error['trace'] ?? null,
+                    ];
+                } else {
+                    $error = null;
+                }
+
+                return [
+                    'iteration' => $execution['iteration'] ?? null,
+                    'callId' => $execution['call_id'] ?? null,
+                    'tool' => $execution['tool'] ?? null,
+                    'arguments' => $arguments,
+                    'status' => $execution['status'] ?? 'success',
+                    'durationMs' => $execution['duration_ms'] ?? null,
+                    'timestamp' => $execution['timestamp'] ?? null,
+                    'stackTrace' => $execution['stack_trace'] ?? null,
+                    'result' => $result,
+                    'error' => $error,
+                ];
+            },
+            array_filter(
+                $executions,
+                static fn ($entry): bool => is_array($entry),
+            ),
+        ));
     }
 }
