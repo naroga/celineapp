@@ -1,0 +1,14 @@
+AI integrations live in this namespace.
+- Providers implement `AiProviderInterface` and must register via the `app.ai_provider` service tag (configured through `instanceof` in services.yaml).
+- Prefer routing all prompt execution through `App\ArtificialIntelligence\AiGateway` so provider selection is consistent.
+- Providers should extend `AbstractAiProvider` and declare the prompt types they support using `PromptType` values.
+- `app.ai.providers` parameter controls the default provider and optional per-assistant overrides; add new keys instead of hardcoding switching logic.
+- Persist user/assistant dialogue in `App\Entity\Conversation` and `App\Entity\ConversationTurn`; use `ConversationManager` to create conversations, seed playbooks, and build prompt context instead of touching entities directly.
+- When sending text prompts, feed prior turns via `ConversationManager::buildTextPromptContext()` to keep the provider’s context window aligned with recent messages.
+- Provider-specific configuration (models, context limits, API bases) lives under `app.ai.providers.providers`; read from there instead of embedding literals in code. Keep this list aligned with the latest generation models (e.g. GPT-5, Claude 4.5 Sonnet, Gemini 2.5 Pro) and update tests if names change.
+- OpenAI access expects the `OPENAI_API_KEY` environment variable; if it’s missing `OpenAiClient` will fail fast to make issues obvious.
+- `app:ai:chat` console command provides an interactive loop for exercising text prompts; it selects providers/models from configuration and passes the chosen model via prompt metadata.
+- Assistant persona generation should flow through `AssistantPersonaGenerator`; it enforces gender normalisation and returns either URL images or base64 payloads. Persist base64 images as full data URLs so they can render directly in the SPA. Assistant names must always be AI-generated—do not introduce deterministic or fallback name lists.
+- Base64 persona images default to the `image/png` mime type when providers do not supply one; set an explicit mime type on the `GeneratedImage` if a different format is returned.
+- `AiGateway` now records every interaction through `AiInteractionRecorder`; do not bypass the gateway or log AI calls manually. Extend the recorder instead of duplicating analytics logic.
+- Use `AiAdminDashboardBuilder` to surface interaction metrics for dashboards or reports so aggregation stays consistent.

@@ -1,0 +1,38 @@
+parameters:
+    app.ai.providers:
+        default: 'openai'
+        assistant_overrides: {  }
+        providers:
+            openai:
+                api_base: 'https://api.openai.com/v1'
+                context_window: 2000000
+                models:
+                    text: 'gpt-5'
+                    vision: 'gpt-5'
+                    image_generation: 'gpt-image-1'
+                    audio_to_text: 'gpt-5'
+                supports:
+                    - text
+                    - image_generation
+                    - computer_vision
+                    - audio_to_text
+            anthropic:
+                api_base: 'https://api.anthropic.com/v1'
+                context_window: 1000000
+                models:
+                    text: 'claude-4.5-sonnet'
+                    vision: 'claude-4.5-sonnet'
+                supports:
+                    - text
+                    - computer_vision
+            gemini:
+                api_base: 'https://generativelanguage.googleapis.com/v1beta'
+                context_window: 2000000
+                models:
+                    text: 'gemini-2.5-pro'
+                    vision: 'gemini-2.5-pro'
+                    image_generation: 'imagen-4.0-generate'
+                supports:
+                    - text
+                    - computer_vision
+                    - image_generation

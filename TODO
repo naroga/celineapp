@@ -1,0 +1,3 @@
+- rename app to celine (from naroga assistant);
+- create infrastructure (terraform);
+- move assistant profile pictures from database to s3;
